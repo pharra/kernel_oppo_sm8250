@@ -1,3 +1,0 @@
-&pcie1 {
-	status = "disabled";
-};

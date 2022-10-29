@@ -24,7 +24,7 @@
 &qupv3_se6_4uart {
 	status = "ok";
 };
-
+/* delete for audio pa
 &dai_mi2s2 {
 	qcom,msm-mi2s-tx-lines = <1>;
 };
@@ -39,7 +39,7 @@
 				&tert_mi2s_sd0_sleep>;
 	};
 };
-
+*/
 &kona_snd {
 	qcom,model = "kona-qrd-snd-card";
 	qcom,audio-routing =
@@ -616,9 +616,8 @@
 };
 
 &sde_dsi {
-	qcom,dsi-default-panel = <&dsi_sw43404_amoled_cmd>;
+	qcom,dsi-default-panel = <&dsi_oppo19065_samsung_1440_3168_dsc_cmd>;
 };
-
 &thermal_zones {
 	conn-therm-usr {
 		polling-delay-passive = <0>;

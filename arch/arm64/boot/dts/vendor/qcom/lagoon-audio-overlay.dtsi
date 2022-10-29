@@ -57,11 +57,12 @@
 			qcom,swr-clock-stop-mode0 = <1>;
 			qcom,swr-mstr-irq-wakeup-capable = <1>;
 			wcd938x_tx_slave: wcd938x-tx-slave {
+				status = "disabled";
 				compatible = "qcom,wcd938x-slave";
 				reg = <0x0D 0x01170223>;
 			};
 			wcd937x_tx_slave: wcd937x-tx-slave {
-				status = "disabled";
+				//status = "disabled";
 				compatible = "qcom,wcd937x-slave";
 				reg = <0x0A 0x01170223>;
 			};
@@ -101,11 +102,12 @@
 			qcom,swr-num-dev = <1>;
 			qcom,swr-clock-stop-mode0 = <1>;
 			wcd938x_rx_slave: wcd938x-rx-slave {
+				status = "disabled";
 				compatible = "qcom,wcd938x-slave";
 				reg = <0x0D 0x01170224>;
 			};
 			wcd937x_rx_slave: wcd937x_rx_slave {
-				status = "disabled";
+				//status = "disabled";
 				compatible = "qcom,wcd937x-slave";
 				reg = <0x0A 0x01170224>;
 			};
@@ -182,6 +184,7 @@
 	};
 
 	wcd938x_codec: wcd938x-codec {
+		status = "disabled";
 		compatible = "qcom,wcd938x-codec";
 		qcom,split-codec = <1>;
 		qcom,rx_swr_ch_map = <0 HPH_L 0x1 0 HPH_L>,
@@ -231,7 +234,7 @@
 	};
 
 	wcd937x_codec: wcd937x-codec {
-		status = "disabled";
+		//status = "disabled";
 		compatible = "qcom,wcd937x-codec";
 		qcom,split-codec = <1>;
 		qcom,rx_swr_ch_map = <0 HPH_L 0x1 0 HPH_L>,
@@ -383,6 +386,12 @@
 	qcom,wsa-aux-dev-prefix = "SpkrLeft", "SpkrRight";
 	qcom,codec-max-aux-devs = <1>;
 	qcom,codec-aux-devs = <&wcd938x_codec>;
+	qcom,cps_reg_phy_addr = <0x3250300 0x3250304 0x3250318>;
+	qcom,cps_wsa_vbatt_temp_reg_addr = <0x0003429 0x0003422>;
+	qcom,cps_threshold_levels = <148 168>;
+	qcom,cps_normal_values = <0x8E 0x8F 0x8F>;
+	qcom,cps_lower1_values = <0x10 0xD0 0xD0>;
+	qcom,cps_lower2_values = <0x0F 0x0F 0x18>;
 	qcom,msm_audio_ssr_devs = <&audio_apr>, <&q6core>,
 				  <&lpi_tlmm>, <&bolero>;
 };

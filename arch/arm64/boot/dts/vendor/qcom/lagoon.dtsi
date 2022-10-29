@@ -43,6 +43,7 @@
 		swr0 = &swr0;
 		swr1 = &swr1;
 		swr2 = &swr2;
+		i2c2 = &qupv3_se10_i2c;
 	};
 
 	cpus {
@@ -325,7 +326,7 @@
 	};
 
 	chosen {
-		bootargs = "rcupdate.rcu_expedited=1 rcu_nocbs=0-7 earlycon=msm_geni_serial,0x98c000";
+		bootargs = "rcupdate.rcu_expedited=1 rcu_nocbs=0-7 earlycon=msm_geni_serial,0x98c000 kpti=off";
 	};
 
 	soc: soc { };
@@ -536,6 +537,7 @@
 
 	bluetooth: bt_wcn3990 {
 		compatible = "qca,wcn3990";
+		qca,bt-sw-ctrl-gpio = <&tlmm 69 0>; /* SW_CTRL */
 		qca,bt-vdd-io-supply =   <&L11A>;  /* IO */
 		qca,bt-vdd-core-supply = <&L2E>; /* RFA */
 		qca,bt-vdd-pa-supply =   <&L10E>; /* CH0 */
@@ -3804,7 +3806,7 @@
 	vdd_l1_l2-supply = <&S8E>;
 	vdd_l3_l4-supply = <&BOB>;
 	vdd_l5-supply = <&BOB>;
-	vdd_l6-supply = <&S2A>;
+//	vdd_l6-supply = <&S2A>;
 	vdd_l7-supply = <&BOB>;
 };
 

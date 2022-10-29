@@ -75,6 +75,16 @@
 			power-source = <1>;
 		};
 	};
+	//Bin.Li@BSP.group 2019-09-30 Add for vol key
+	key_vol_down {
+		key_vol_down_default: key_vol_down_default {
+			pins = "gpio7";
+			function = "normal";
+			input-enable;
+			bias-pull-up;
+			power-source = <1>;
+		};
+	};
 
 	key_confirm {
 		key_confirm_default: key_confirm_default {

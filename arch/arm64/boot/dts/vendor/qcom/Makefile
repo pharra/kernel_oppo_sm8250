@@ -1,14 +1,3 @@
-ifeq ($(CONFIG_OPPO_COMMON_SOFT),y)
-ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
-        dtbo-$(CONFIG_ARCH_KONA) += kona-mtp-overlay-19066.dtbo
-
-kona-mtp-overlay-19066.dtbo-base := kona-19066.dtb kona-v2-19066.dtb kona-v2.1-19066.dtb
-else
-dtb-$(CONFIG_ARCH_KONA) += kona-19066.dtb \
-	kona-v2-19066.dtb \
-	kona-v2.1-19066.dtb
-endif
-else
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
         dtbo-$(CONFIG_ARCH_KONA) += \
                 kona-cdp-overlay.dtbo \
@@ -77,6 +66,8 @@ dtbo-$(CONFIG_ARCH_LITO) += lito-rumi-overlay.dtbo \
                 lito-v2-atp-lcd-overlay.dtbo \
                 lito-qrd-overlay.dtbo \
                 lito-v2-qrd-overlay.dtbo \
+                litomagnus-mtp-overlay.dtbo \
+                litomagnus-cdp-overlay.dtbo \
                 orchid-mtp-overlay.dtbo \
                 orchid-cdp-overlay.dtbo
 
@@ -90,6 +81,8 @@ lito-v2-atp-overlay.dtbo-base := lito-v2.dtb
 lito-v2-atp-lcd-overlay.dtbo-base := lito-v2.dtb
 lito-qrd-overlay.dtbo-base := lito.dtb
 lito-v2-qrd-overlay.dtbo-base := lito-v2.dtb
+litomagnus-mtp-overlay.dtbo-base := litomagnus.dtb
+litomagnus-cdp-overlay.dtbo-base := litomagnus.dtb
 orchid-mtp-overlay.dtbo-base := orchid.dtb
 orchid-cdp-overlay.dtbo-base := orchid.dtb
 else
@@ -103,6 +96,8 @@ dtb-$(CONFIG_ARCH_LITO) += lito-rumi.dtb \
                 lito-v2-atp.dtb \
                 lito-v2-atp-lcd.dtb \
                 lito-v2-qrd.dtb \
+                litomagnus-mtp.dtb \
+                litomagnus-cdp.dtb \
                 orchid-mtp.dtb \
                 orchid-cdp.dtb
 endif
@@ -292,7 +287,6 @@ sdm660-internal-codec-cdp.dtb \
         sdm660-pm660a-headset-jacktype-no-rcm.dtb \
         sdm660-usbc-audio-mtp.dtb \
         sdm660-usbc-audio-rcm.dtb
-endif
 endif
 
 always		:= $(dtb-y)
