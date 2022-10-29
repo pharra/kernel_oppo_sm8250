@@ -11,8 +11,10 @@
 #include <linux/pm_qos.h>
 #include <net/cnss2.h>
 #include <soc/qcom/memory_dump.h>
-#ifdef CONFIG_MSM_SUBSYSTEM_RESTART
+#if defined(CONFIG_MSM_SUBSYSTEM_RESTART) || defined(CONFIG_SUBSYSTEM_RAMDUMP)
 #include <soc/qcom/ramdump.h>
+#endif
+#ifdef CONFIG_MSM_SUBSYSTEM_RESTART
 #include <soc/qcom/subsystem_notif.h>
 #include <soc/qcom/subsystem_restart.h>
 #endif
@@ -81,6 +83,7 @@ struct cnss_pinctrl_info {
 	struct pinctrl_state *bootstrap_active;
 	struct pinctrl_state *wlan_en_active;
 	struct pinctrl_state *wlan_en_sleep;
+	int bt_en_gpio;
 };
 
 #ifdef CONFIG_MSM_SUBSYSTEM_RESTART
@@ -237,6 +240,7 @@ enum cnss_driver_state {
 	CNSS_IMS_CONNECTED,
 	CNSS_IN_SUSPEND_RESUME,
 	CNSS_IN_REBOOT,
+	CNSS_QMI_DEL_SERVER,
 };
 
 struct cnss_recovery_data {
@@ -400,7 +404,29 @@ struct cnss_plat_data {
 	int (*get_info_cb)(void *ctx, void *event, int event_len);
 	u8 use_nv_mac;
 	u8 set_wlaon_pwr_ctrl;
+	u8 fw_pcie_gen_switch;
+	u8 pcie_gen_speed;
+	int power_up_error;
+
+    #ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+    //Add for wifi switch monitor
+	unsigned long loadBdfState;
+	unsigned long loadRegdbState;
+    #endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
 };
+
+#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+//Add for wifi switch monitor
+enum cnss_load_state {
+	CNSS_LOAD_BDF_FAIL = 1,
+	CNSS_LOAD_BDF_SUCCESS,
+	CNSS_LOAD_REGDB_FAIL,
+	CNSS_LOAD_REGDB_SUCCESS,
+	CNSS_PROBE_FAIL,
+	CNSS_PROBE_SUCCESS,
+};
+
+#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
 
 #ifdef CONFIG_ARCH_QCOM
 static inline u64 cnss_get_host_timestamp(struct cnss_plat_data *plat_priv)
@@ -446,6 +472,8 @@ int cnss_register_subsys(struct cnss_plat_data *plat_priv);
 void cnss_unregister_subsys(struct cnss_plat_data *plat_priv);
 int cnss_register_ramdump(struct cnss_plat_data *plat_priv);
 void cnss_unregister_ramdump(struct cnss_plat_data *plat_priv);
+int cnss_do_ramdump(struct cnss_plat_data *plat_priv);
+int cnss_do_elf_ramdump(struct cnss_plat_data *plat_priv);
 void cnss_set_pin_connect_status(struct cnss_plat_data *plat_priv);
 int cnss_get_cpr_info(struct cnss_plat_data *plat_priv);
 int cnss_update_cpr_info(struct cnss_plat_data *plat_priv);

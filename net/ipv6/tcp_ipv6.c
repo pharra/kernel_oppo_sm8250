@@ -71,6 +71,10 @@
 
 #include <trace/events/tcp.h>
 
+//#ifdef OPLUS_FEATURE_NWPOWER
+#include <net/oplus_nwpower.h>
+//#endif /* OPLUS_FEATURE_NWPOWER */
+
 static void	tcp_v6_send_reset(const struct sock *sk, struct sk_buff *skb);
 static void	tcp_v6_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req);
@@ -268,7 +272,7 @@ static int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 
 	security_sk_classify_flow(sk, flowi6_to_flowi(&fl6));
 
-	dst = ip6_dst_lookup_flow(sk, &fl6, final_p);
+	dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
 	if (IS_ERR(dst)) {
 		err = PTR_ERR(dst);
 		goto failure;
@@ -885,7 +889,7 @@ static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32
 	 * Underlying function will use this to retrieve the network
 	 * namespace
 	 */
-	dst = ip6_dst_lookup_flow(ctl_sk, &fl6, NULL);
+	dst = ip6_dst_lookup_flow(sock_net(ctl_sk), ctl_sk, &fl6, NULL);
 	if (!IS_ERR(dst)) {
 		skb_dst_set(buff, dst);
 		ip6_xmit(ctl_sk, buff, &fl6, fl6.flowi6_mark, NULL, tclass);
@@ -1434,6 +1438,10 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	int ret;
 	struct net *net = dev_net(skb->dev);
 
+	//#ifdef OPLUS_FEATURE_NWPOWER
+	oplus_match_ipa_ip_wakeup(OPLUS_TCP_TYPE_V6, skb);
+	//#endif /* OPLUS_FEATURE_NWPOWER */
+
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
 
@@ -1464,6 +1472,10 @@ lookup:
 				&refcounted);
 	if (!sk)
 		goto no_tcp_socket;
+
+	//#ifdef OPLUS_FEATURE_NWPOWER
+	oplus_match_ipa_tcp_wakeup(OPLUS_TCP_TYPE_V6, sk);
+	//#endif /* OPLUS_FEATURE_NWPOWER */
 
 process:
 	if (sk->sk_state == TCP_TIME_WAIT)
@@ -1579,6 +1591,9 @@ bad_packet:
 	}
 
 discard_it:
+	//#ifdef OPLUS_FEATURE_NWPOWER
+	oplus_ipa_schedule_work();
+	//#endif /* OPLUS_FEATURE_NWPOWER */
 	kfree_skb(skb);
 	return 0;
 

@@ -815,6 +815,14 @@ config QTI_RPM_STATS_LOG
 	  the low power modes that RPM enters. The drivers outputs the message
 	  via a sysfs node.
 
+config RPMH_MODEM_SLEEPINFO_BUFFER
+	bool 'modem sleepinfo backup support'
+	default y
+	help
+	  This option enables support for the function that make a buffer of
+	  modem subsystem sleep info.
+	  If unsure, say `N'.
+
 config QTI_DDR_STATS_LOG
 	tristate "Qualcomm Technologies Inc (QTI) DDR Stats Driver"
 	depends on QCOM_RPMH
@@ -904,6 +912,16 @@ config QTI_CRYPTO_TZ
 	 performing hardware based file encryption. This means keys are
 	 programmed and managed through SCM calls to TZ where ICE driver
 	 will configure keys.
+
+config MSM_BAM_DMUX
+	bool "BAM Data Mux Driver"
+	depends on SPS
+	help
+	 Support Muxed Data Channels over BAM interface.
+	 BAM has a limited number of pipes.  This driver
+	 provides a means to support more logical channels
+	 via muxing than BAM could without muxing.
+
 endmenu
 
 config QCOM_HYP_CORE_CTL

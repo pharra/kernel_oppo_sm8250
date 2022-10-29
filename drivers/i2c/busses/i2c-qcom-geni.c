@@ -22,10 +22,9 @@
 #include <linux/ioctl.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/slab.h>
-#ifdef VENDOR_EDIT
-/* Jianchao.Shi@PSW.BSP.CHG.Basic, 2018/04/05, sjc Add for charging */
-#include "../../power/oplus/oppo_vooc.h"
-#include <soc/oplus/boot_mode.h>
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#include "../../power/oplus/oplus_vooc.h"
+#include <soc/oplus/system/boot_mode.h>
 #endif
 
 #define SE_I2C_TX_TRANS_LEN		(0x26C)
@@ -33,10 +32,10 @@
 #define SE_I2C_SCL_COUNTERS		(0x278)
 #define SE_GENI_IOS			(0x908)
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
-/* Hang.Zhao@PSW.BSP.CHG.Basic,2020/1/10, Modify for i2c error issue */
+#ifdef OPLUS_FEATURE_CHG_BASIC 
 #define SE_I2C_NOISE_CANCEL_CTL                (0x234)
 #endif
+
 
 #define SE_I2C_ERR  (M_CMD_OVERRUN_EN | M_ILLEGAL_CMD_EN | M_CMD_FAILURE_EN |\
 			M_GP_IRQ_1_EN | M_GP_IRQ_3_EN | M_GP_IRQ_4_EN)
@@ -139,7 +138,6 @@ struct geni_i2c_dev {
 	u32 dbg_num;
 	struct dbg_buf_ctxt *dbg_buf_ptr;
 #ifdef OPLUS_FEATURE_CHG_BASIC 
-	/* Hang.Zhao@PSW.BSP.CHG.Basic,2020/1/10, Modify for i2c error issue */
 	u32 noise_rjct_scl;
 	u32 noise_rjct_sda;
 	bool noise_rjct_support;
@@ -218,7 +216,6 @@ static inline void qcom_geni_i2c_conf(struct geni_i2c_dev *gi2c, int dfs)
 			itr->t_cycle), gi2c->base, SE_I2C_SCL_COUNTERS);
 
 #ifdef OPLUS_FEATURE_CHG_BASIC 
-	/* Hang.Zhao@PSW.BSP.CHG.Basic,2020/1/10, Modify for i2c error issue */
 	if (gi2c->noise_rjct_support) {
 		geni_write_reg(gi2c->noise_rjct_scl << 1 | gi2c->noise_rjct_sda << 3,
 				gi2c->base, SE_I2C_NOISE_CANCEL_CTL);
@@ -748,9 +745,9 @@ geni_i2c_gsi_xfer_out:
 		ret = gi2c->err;
 	return ret;
 }
-#ifdef VENDOR_EDIT
-/* Jianchao.Shi@PSW.BSP.CHG.Basic, 2018/04/05, sjc Add for charging */
+#ifdef OPLUS_FEATURE_CHG_BASIC
 #define MAX_RESET_COUNT	10
+#define MIN_RESET_COUNT	0
 #define I2C_RESET_BUS		0
 #define FG_DEVICE_ADDR		0x55
 #define DA9313_DEVICE_ADDR	0x68
@@ -760,19 +757,19 @@ static bool i2c_err_occured = false;
 static unsigned int err_count = MAX_RESET_COUNT;
 extern int rpmb_is_enable(void);
 
-bool oppo_get_fg_i2c_err_occured(void)
+bool oplus_get_fg_i2c_err_occured(void)
 {
 	return i2c_err_occured;
 }
-EXPORT_SYMBOL(oppo_get_fg_i2c_err_occured);
+EXPORT_SYMBOL(oplus_get_fg_i2c_err_occured);
 
-void oppo_set_fg_i2c_err_occured(bool i2c_err)
+void oplus_set_fg_i2c_err_occured(bool i2c_err)
 {
 	i2c_err_occured = i2c_err;
 }
-EXPORT_SYMBOL(oppo_set_fg_i2c_err_occured);
+EXPORT_SYMBOL(oplus_set_fg_i2c_err_occured);
 
-static void i2c_oppo_gpio_reset(struct geni_i2c_dev *gi2c)
+static void i2c_oplus_gpio_reset(struct geni_i2c_dev *gi2c)
 {
 	int ret = 0;
 	int i = 0;
@@ -812,12 +809,12 @@ static void i2c_oppo_gpio_reset(struct geni_i2c_dev *gi2c)
 
 	for (i = 0; i < 220; i++) {
 		usleep_range(10000, 11000);
-		if (oppo_vooc_get_fastchg_started() == true && oppo_vooc_get_fastchg_ing() == false) {
+		if (oplus_vooc_get_fastchg_started() == true && oplus_vooc_get_fastchg_ing() == false) {
 			dev_err(gi2c->dev, "%s: vooc ready to start, don't pull down i2c, i:%d\n", __func__, i);
 			break;
 		}
 	}
-	oppo_set_fg_i2c_err_occured(true);
+	oplus_set_fg_i2c_err_occured(true);
 
 	if (!IS_ERR_OR_NULL(gi2c->i2c_rsc.geni_gpio_pullup)) {
 		dev_err(gi2c->dev, "%s: set geni_gpio_pullup\n", __func__);
@@ -844,7 +841,7 @@ static void i2c_oppo_gpio_reset(struct geni_i2c_dev *gi2c)
 err:
 	i2c_reset_processing = false;
 }
-#endif /*VENDOR_EDIT*/
+#endif /*OPLUS_FEATURE_CHG_BASIC*/
 static int geni_i2c_xfer(struct i2c_adapter *adap,
 			 struct i2c_msg msgs[],
 			 int num)
@@ -1022,13 +1019,12 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 		}
 
 		ret = gi2c->err;
-#ifdef VENDOR_EDIT
-/* Jianchao.Shi@PSW.BSP.CHG.Basic, 2018/04/05, sjc Add for charging */
+#ifdef OPLUS_FEATURE_CHG_BASIC
 		if(msgs[i].addr == FG_DEVICE_ADDR || msgs[i].addr == DA9313_DEVICE_ADDR) {
 			if (gi2c->err) {
 				dev_err(gi2c->dev, "gi2c->adap.nr[%d], err_count[%d], msgs[i].addr[0x%x]\n", gi2c->adap.nr, err_count, msgs[i].addr);
-				if (err_count < MAX_RESET_COUNT) {
-					i2c_oppo_gpio_reset(gi2c);
+				if (err_count > MIN_RESET_COUNT && err_count < MAX_RESET_COUNT) {
+					i2c_oplus_gpio_reset(gi2c);
 				} else {
 					dev_err(gi2c->dev, "err_count(%d) >= %d so not reset\n", err_count, MAX_RESET_COUNT);
 				}
@@ -1165,8 +1161,7 @@ static int geni_i2c_probe(struct platform_device *pdev)
 		gi2c->is_shared = true;
 		dev_info(&pdev->dev, "Multi-EE usecase\n");
 	}
-#ifdef VENDOR_EDIT
-/* Jianchao.Shi@PSW.BSP.CHG.Basic, 2018/04/05, sjc Add for charging */
+#ifdef OPLUS_FEATURE_CHG_BASIC
 	gi2c->i2c_rsc.geni_gpio_pulldown =
 		pinctrl_lookup_state(gi2c->i2c_rsc.geni_pinctrl,
 							PINCTRL_PULLDOWN);
@@ -1208,6 +1203,22 @@ static int geni_i2c_probe(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "Bus frequency is set to %dHz\n",
 					gi2c->i2c_rsc.clk_freq_out);
+
+#ifdef OPLUS_FEATURE_CHG_BASIC
+	gi2c->noise_rjct_scl = 0;
+	gi2c->noise_rjct_sda = 0;
+	gi2c->noise_rjct_support = true;
+
+	ret = of_property_read_u32(pdev->dev.of_node, "qcom,noise-rjct-scl",
+			&gi2c->noise_rjct_scl);
+	if(ret < 0)
+		gi2c->noise_rjct_support = false;
+
+	of_property_read_u32(pdev->dev.of_node, "qcom,noise-rjct-sda",
+			&gi2c->noise_rjct_sda);
+	if(ret < 0)
+		gi2c->noise_rjct_support = false;
+#endif
 
 	gi2c->irq = platform_get_irq(pdev, 0);
 	if (gi2c->irq < 0) {

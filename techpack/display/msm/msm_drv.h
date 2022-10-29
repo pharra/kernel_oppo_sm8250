@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -122,9 +122,6 @@ enum msm_mdp_plane_property {
 	PLANE_PROP_SCALER_V1,
 	PLANE_PROP_SCALER_V2,
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.LCD.Feature,2018-11-21
- * Support custom propertys
-*/
 	PLANE_PROP_CUSTOM,
 #endif /* OPLUS_BUG_STABILITY */
 	PLANE_PROP_INVERSE_PMA,
@@ -167,9 +164,6 @@ enum msm_mdp_crtc_property {
 	CRTC_PROP_IDLE_TIMEOUT,
 	CRTC_PROP_DEST_SCALER,
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.LCD.Feature,2018-11-21
- * Support custom propertys
-*/
 	CRTC_PROP_CUSTOM,
 #endif
 	CRTC_PROP_CAPTURE_OUTPUT,
@@ -203,9 +197,6 @@ enum msm_mdp_conn_property {
 	CONNECTOR_PROP_BL_SCALE,
 	CONNECTOR_PROP_SV_BL_SCALE,
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.LCD.Feature,2018-011-21
- * Support custom propertys
-*/
 	CONNECTOR_PROP_CUSTOM,
 #endif
 	CONNECTOR_PROP_SUPPORTED_COLORSPACES,
@@ -218,6 +209,10 @@ enum msm_mdp_conn_property {
 	CONNECTOR_PROP_FB_TRANSLATION_MODE,
 	CONNECTOR_PROP_QSYNC_MODE,
 	CONNECTOR_PROP_CMD_FRAME_TRIGGER_MODE,
+
+#ifdef OPLUS_FEATURE_ADFR
+	CONNECTOR_PROP_QSYNC_MIN_FPS,
+#endif
 
 	/* total # of properties */
 	CONNECTOR_PROP_COUNT
@@ -530,6 +525,7 @@ struct msm_resource_caps_info {
  *				 used instead of panel TE in cmd mode panels
  * @roi_caps:           Region of interest capability info
  * @qsync_min_fps	Minimum fps supported by Qsync feature
+ * @has_qsync_min_fps_list True if dsi-supported-qsync-min-fps-list exits
  * @te_source		vsync source pin information
  */
 struct msm_display_info {
@@ -553,6 +549,8 @@ struct msm_display_info {
 	struct msm_roi_caps roi_caps;
 
 	uint32_t qsync_min_fps;
+	bool has_qsync_min_fps_list;
+
 	uint32_t te_source;
 };
 
@@ -585,6 +583,9 @@ struct msm_display_kickoff_params {
 struct msm_display_conn_params {
 	uint32_t qsync_mode;
 	bool qsync_update;
+#ifdef OPLUS_FEATURE_ADFR
+	uint32_t qsync_dynamic_min_fps;
+#endif
 };
 
 /**
@@ -661,6 +662,10 @@ struct msm_drm_private {
 
 	struct msm_drm_thread disp_thread[MAX_CRTCS];
 	struct msm_drm_thread event_thread[MAX_CRTCS];
+
+#ifdef OPLUS_FEATURE_ADFR
+	struct msm_drm_thread adfr_thread[MAX_CRTCS];
+#endif
 
 	struct task_struct *pp_event_thread;
 	struct kthread_worker pp_event_worker;
@@ -897,7 +902,8 @@ struct drm_framebuffer *msm_framebuffer_create(struct drm_device *dev,
 		struct drm_file *file, const struct drm_mode_fb_cmd2 *mode_cmd);
 struct drm_framebuffer * msm_alloc_stolen_fb(struct drm_device *dev,
 		int w, int h, int p, uint32_t format);
-
+int msm_fb_obj_get_attrs(struct drm_gem_object *obj, int *fb_ns,
+		int *fb_sec, int *fb_sec_dir, unsigned long *flags);
 struct drm_fb_helper *msm_fbdev_init(struct drm_device *dev);
 void msm_fbdev_free(struct drm_device *dev);
 

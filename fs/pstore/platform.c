@@ -250,6 +250,9 @@ static int pstore_compress(const void *in, void *out,
 {
 	int ret;
 
+	if (!IS_ENABLED(CONFIG_PSTORE_COMPRESSION))
+		return -EINVAL;
+
 	ret = crypto_comp_compress(tfm, in, inlen, out, &outlen);
 	if (ret) {
 		pr_err("crypto_comp_compress failed, ret = %d!\n", ret);
@@ -488,7 +491,35 @@ static void pstore_console_write(struct console *con, const char *s, unsigned c)
 	record.size = c;
 	psinfo->write(&record);
 }
+#ifdef OPLUS_FEATURE_DUMPDEVICE
+static void  pstore_console_init(void )
+{
+	size_t oldsize;
+	size_t size =0;
+	struct ramoops_context *cxt = psinfo->data;
+	struct pstore_record record;
 
+	if (psinfo == NULL)
+		return;
+
+	size = cxt->console_size;
+
+	pstore_record_init(&record, psinfo);
+	record.type = PSTORE_TYPE_CONSOLE;
+	record.buf = psinfo->buf;
+	record.size = size;
+
+	oldsize = psinfo->bufsize;
+
+	if (size > psinfo->bufsize)
+		size = psinfo->bufsize;
+	memset(record.buf, ' ', size);
+
+	psinfo->write(&record);
+
+	psinfo->bufsize = oldsize ;
+}
+#endif
 static struct console pstore_console = {
 	.name	= "pstore",
 	.write	= pstore_console_write,
@@ -498,6 +529,10 @@ static struct console pstore_console = {
 
 static void pstore_register_console(void)
 {
+#ifdef OPLUS_FEATURE_DUMPDEVICE
+	/*pstore memset befor use*/
+	pstore_console_init();
+#endif
 	register_console(&pstore_console);
 }
 
@@ -647,7 +682,7 @@ static void decompress_record(struct pstore_record *record)
 	int unzipped_len;
 	char *decompressed;
 
-	if (!record->compressed)
+	if (!IS_ENABLED(CONFIG_PSTORE_COMPRESSION) || !record->compressed)
 		return;
 
 	/* Only PSTORE_TYPE_DMESG support compression. */
@@ -802,9 +837,9 @@ static int __init pstore_init(void)
 
 	ret = pstore_init_fs();
 	if (ret)
-		return ret;
+		free_buf_for_compression();
 
-	return 0;
+	return ret;
 }
 late_initcall(pstore_init);
 

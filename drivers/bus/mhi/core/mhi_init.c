@@ -1561,7 +1561,7 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	init_waitqueue_head(&mhi_cntrl->state_event);
 
 	mhi_cntrl->wq = alloc_ordered_workqueue("mhi_w",
-						WQ_MEM_RECLAIM | WQ_HIGHPRI);
+						WQ_HIGHPRI);
 	if (!mhi_cntrl->wq)
 		goto error_alloc_cmd;
 
@@ -1773,6 +1773,13 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 					   &bhie_off);
 			if (ret) {
 				MHI_CNTRL_ERR("Error getting bhie offset\n");
+				goto bhie_error;
+			}
+
+			if (bhie_off >= mhi_cntrl->len) {
+				MHI_ERR("Invalid BHIE=0x%x  len=0x%x\n",
+					bhie_off, mhi_cntrl->len);
+				ret = -EINVAL;
 				goto bhie_error;
 			}
 

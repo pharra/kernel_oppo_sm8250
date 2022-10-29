@@ -282,6 +282,8 @@ static void free_fw_priv(struct fw_priv *fw_priv)
 /* direct firmware loading support */
 static char fw_path_para[256];
 static const char * const fw_path[] = {
+	//add for: support auto update function, include mtk fw, mtk wifi.cfg, qcom fw, qcom bdf, qcom ini
+	"/data/misc/firmware/active",
 	fw_path_para,
 	"/lib/firmware/updates/" UTS_RELEASE,
 	"/lib/firmware/updates",
@@ -298,7 +300,6 @@ module_param_string(path, fw_path_para, sizeof(fw_path_para), 0644);
 MODULE_PARM_DESC(path, "customized firmware image search path with a higher priority than default path");
 
 #ifdef OPLUS_FEATURE_TP_BSPFWUPDATE
-//Ping.Zhang@PSW.BSP.Tp, 2019-10-15, dd to avoid direct pass encrypt tp firmware to driver
 static int fw_get_filesystem_firmware(struct device *device,
 					struct fw_priv *fw_priv,
 					enum fw_opt opt_flags)
@@ -315,7 +316,6 @@ fw_get_filesystem_firmware(struct device *device, struct fw_priv *fw_priv)
 	size_t msize = INT_MAX;
 
 #ifdef OPLUS_FEATURE_TP_BSPFWUPDATE
-	//Ping.Zhang@PSW.BSP.Tp, 2019-10-15, Add to avoid direct pass encrypt tp firmware to driver
 	if(opt_flags & FW_OPT_COMPARE) {
 		pr_err("%s opt_flags get FW_OPT_COMPARE!\n", __func__);
 		return rc;
@@ -345,24 +345,23 @@ fw_get_filesystem_firmware(struct device *device, struct fw_priv *fw_priv)
 		}
 
 #if defined(OPLUS_FEATURE_CAMERA_OIS)
-		//add by hongbo.dai@camera, 2020/7/7, for OIS feature
-		if (strstr(fw_priv->fw_name, "ois_") != NULL) {
-			snprintf(path, PATH_MAX, "%s/%s", "/odm/vendor/firmware", fw_priv->fw_name);
+		if (strstr(fw_path[i], "/lib/firmware/") != NULL) {
+			if (strstr(fw_priv->fw_name, "ois_") != NULL) {
+				snprintf(path, PATH_MAX, "%s/%s", "/odm/vendor/firmware", fw_priv->fw_name);
+			}
 		}
 #endif /*OPLUS_FEATURE_CAMERA_OIS*/
 #if defined(OPLUS_FEATURE_PXLW_IRIS5)
-       // Pixelworks@MULTIMEDIA.DISPLAY, 2020/06/11, Iris5 Feature
 		if (!strcmp(fw_priv->fw_name, "iris5.fw")
 			|| !strcmp(fw_priv->fw_name, "iris5_ccf1.fw")
 			|| !strcmp(fw_priv->fw_name, "iris5_ccf2.fw")) {
 			snprintf(path, PATH_MAX, "%s/%s", "/odm/vendor/firmware", fw_priv->fw_name);
 		}
-#endif /*OPLUS_FEATURE_PXLW_IRIS5*/
-#ifdef VENDOR_EDIT
-		if (!strcmp(fw_priv->fw_name, "bdwlan.elf")) {
-			snprintf(path, PATH_MAX, "%s/%s", "/odm/etc/wifi", fw_priv->fw_name);
+		if (!strcmp(fw_priv->fw_name, "iris5_ccf1b.fw")
+			|| !strcmp(fw_priv->fw_name, "iris5_ccf2b.fw")) {
+			snprintf(path, PATH_MAX, "%s/%s", "/data/vendor/display", fw_priv->fw_name);
 		}
-#endif
+#endif /*OPLUS_FEATURE_PXLW_IRIS5*/
 		fw_priv->size = 0;
 		rc = kernel_read_file_from_path(path, &fw_priv->data, &size,
 						msize, id);
@@ -624,7 +623,6 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 		goto out;
 
 #ifdef OPLUS_FEATURE_TP_BSPFWUPDATE
-//Ping.Zhang@PSW.BSP.Tp, 2019-10-15, Add to avoid direct pass encrypt tp firmware to driver
 	ret = fw_get_filesystem_firmware(device, fw->priv, opt_flags);
 #else
 	ret = fw_get_filesystem_firmware(device, fw->priv);
@@ -684,25 +682,6 @@ request_firmware(const struct firmware **firmware_p, const char *name,
 }
 EXPORT_SYMBOL(request_firmware);
 
-#ifdef OPLUS_FEATURE_TP_BSPFWUPDATE
-//Ping.Zhang@PSW.BSP.Tp, 2019-10-15, Add interface to get proper fw
-int request_firmware_select(const struct firmware **firmware_p, const char *name,
-		 struct device *device)
-{
-	int ret;
-
-	/* Need to pin this module until return */
-	__module_get(THIS_MODULE);
-	ret = _request_firmware(firmware_p, name, device, NULL, 0,
-				FW_OPT_UEVENT | FW_OPT_COMPARE);
-	module_put(THIS_MODULE);
-	return ret;
-}
-EXPORT_SYMBOL(request_firmware_select);
-#endif/*OPLUS_FEATURE_TP_BSPFWUPDATE*/
-
-#ifdef VENDOR_EDIT
-//Laixin@PSW.CN.Wi-Fi.Basic.Hardware.1065227 , 2019/10/17
 //Add for: reload wlan bdf without using cache
 int
 request_firmware_no_cache(const struct firmware **firmware_p, const char *name,
@@ -718,7 +697,6 @@ request_firmware_no_cache(const struct firmware **firmware_p, const char *name,
 	return ret;
 }
 EXPORT_SYMBOL(request_firmware_no_cache);
-#endif /* VENDOR_EDIT */
 
 /**
  * firmware_request_nowarn() - request for an optional fw module

@@ -17,7 +17,6 @@
  */
 #include <drm/drm_panel.h>
 #ifdef OPLUS_BUG_STABILITY
-/*Mark.Yao@PSW.MM.Display.LCD.Stable,2019-09-12 use oppo custon notify */
 #include <linux/msm_drm_notify.h>
 #include <linux/notifier.h>
 #endif /* OPLUS_BUG_STABILITY */
@@ -39,7 +38,6 @@ struct msm_commit {
 };
 
 #ifdef OPLUS_BUG_STABILITY
-/*Mark.Yao@PSW.MM.Display.LCD.Params,2019-08-15 add oppo custom notify */
 static BLOCKING_NOTIFIER_HEAD(msm_drm_notifier_list);
 
 /**

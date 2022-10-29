@@ -42,17 +42,24 @@
 #include "sde_core_perf.h"
 #include "sde_trace.h"
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.Lcd.Stability, 2018-11-21
- * Add for drm notifier for display connect
-*/
 #include <linux/msm_drm_notify.h>
 #include <linux/notifier.h>
-#include "oppo_display_private_api.h"
-#include "oppo_onscreenfingerprint.h"
+#include "oplus_display_private_api.h"
+#include "oplus_onscreenfingerprint.h"
+#include "oplus_aod.h"
 
-extern int oppo_dimlayer_fingerprint_failcount;
-extern int oppo_underbrightness_alpha;
+extern int oplus_dimlayer_fingerprint_failcount;
+extern int oplus_underbrightness_alpha;
 extern int msm_drm_notifier_call_chain(unsigned long val, void *v);
+extern int oplus_request_power_status;
+#endif
+
+#ifdef OPLUS_FEATURE_ADFR
+#include "oplus_adfr.h"
+#endif
+
+#if defined(OPLUS_FEATURE_PXLW_IRIS5)
+extern int igc_lut_update;
 #endif
 
 #define SDE_PSTATES_MAX (SDE_STAGE_MAX * 4)
@@ -125,7 +132,6 @@ static inline struct sde_kms *_sde_crtc_get_kms(struct drm_crtc *crtc)
 }
 
 #ifdef OPLUS_BUG_STABILITY
-/* QianXu@MM.Display.LCD.Stability, 2020/3/31, for decoupling display driver */
 struct sde_kms *_sde_crtc_get_kms_(struct drm_crtc *crtc)
 {
 	return _sde_crtc_get_kms(crtc);
@@ -400,14 +406,34 @@ static ssize_t vsync_event_show(struct device *device,
 			ktime_to_ns(sde_crtc->vblank_last_cb_time));
 }
 
+static ssize_t retire_frame_event_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	SDE_EVT32(DRMID(&sde_crtc->base));
+	return scnprintf(buf, PAGE_SIZE, "RETIRE_FRAME_TIME=%llu\n",
+			ktime_to_ns(sde_crtc->retire_frame_event_time));
+}
+
 static DEVICE_ATTR_RO(vsync_event);
 static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(fps_periodicity_ms);
+static DEVICE_ATTR_RO(retire_frame_event);
 
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
 	&dev_attr_measured_fps.attr,
 	&dev_attr_fps_periodicity_ms.attr,
+	&dev_attr_retire_frame_event.attr,
 	NULL
 };
 
@@ -431,6 +457,8 @@ static void sde_crtc_destroy(struct drm_crtc *crtc)
 
 	if (sde_crtc->vsync_event_sf)
 		sysfs_put(sde_crtc->vsync_event_sf);
+	if (sde_crtc->retire_frame_event_sf)
+		sysfs_put(sde_crtc->retire_frame_event_sf);
 	if (sde_crtc->sysfs_dev)
 		device_unregister(sde_crtc->sysfs_dev);
 
@@ -475,7 +503,6 @@ static void _sde_crtc_setup_blend_cfg(struct sde_crtc_mixer *mixer,
 	/* default to opaque blending */
 	fg_alpha = sde_plane_get_property(pstate, PLANE_PROP_ALPHA);
 	#ifdef OPLUS_BUG_STABILITY
-	/*Mark.Yao@PSW.MM.Display.LCD.Stable,2019-01-12 support plane skip */
 	if (pstate->is_skip)
 		fg_alpha = 0;
 	#endif /* OPLUS_BUG_STABILITY */
@@ -1476,9 +1503,6 @@ static void _sde_crtc_blend_setup_mixer(struct drm_crtc *crtc,
 					mixer, &cstate->dim_layer[i]);
 
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.Service.Feature,2018/11/21
- * For OnScreenFingerprint feature
-*/
 		if (cstate->fingerprint_dim_layer) {
 			bool is_dim_valid = true;
 			uint32_t zpos_max = 0;
@@ -1494,17 +1518,18 @@ static void _sde_crtc_blend_setup_mixer(struct drm_crtc *crtc,
 				SDE_EVT32(pstate->stage, cstate->fingerprint_dim_layer->stage, zpos_max);
 				if (pstate->stage == cstate->fingerprint_dim_layer->stage) {
 					is_dim_valid = false;
-					oppo_dimlayer_fingerprint_failcount++;
+					oplus_dimlayer_fingerprint_failcount++;
 					SDE_ERROR("Skip fingerprint_dim_layer as it shared plane stage %d %d\n",
 							pstate->stage, cstate->fingerprint_dim_layer->stage);
-					SDE_EVT32(pstate->stage, cstate->fingerprint_dim_layer->stage, zpos_max, oppo_dimlayer_fingerprint_failcount);
+					SDE_EVT32(pstate->stage, cstate->fingerprint_dim_layer->stage, zpos_max, oplus_dimlayer_fingerprint_failcount);
 				}
 			}
 			if (is_dim_valid) {
 				_sde_crtc_setup_dim_layer_cfg(crtc, sde_crtc,
 						mixer, cstate->fingerprint_dim_layer);
 			}
-		}
+	}
+
 #endif
 	}
 
@@ -1761,8 +1786,12 @@ int sde_crtc_state_find_plane_fb_modes(struct drm_crtc_state *state,
 
 static void _sde_drm_fb_sec_dir_trans(
 	struct sde_kms_smmu_state_data *smmu_state, uint32_t secure_level,
-	struct sde_mdss_cfg *catalog, bool old_valid_fb, int *ops)
+	struct sde_mdss_cfg *catalog, bool old_valid_fb, int *ops,
+	struct drm_crtc_state *old_crtc_state)
 {
+	struct sde_crtc_state *old_cstate = to_sde_crtc_state(old_crtc_state);
+	int old_secure_session = old_cstate->secure_session;
+
 	/* secure display usecase */
 	if ((smmu_state->state == ATTACHED)
 			&& (secure_level == SDE_DRM_SEC_ONLY)) {
@@ -1783,6 +1812,10 @@ static void _sde_drm_fb_sec_dir_trans(
 		smmu_state->secure_level = secure_level;
 		smmu_state->transition_type = PRE_COMMIT;
 		*ops |= SDE_KMS_OPS_SECURE_STATE_CHANGE;
+		if (old_secure_session ==
+			SDE_SECURE_VIDEO_SESSION)
+			*ops |= (SDE_KMS_OPS_WAIT_FOR_TX_DONE  |
+					SDE_KMS_OPS_CLEANUP_PLANE_FB);
 	}
 }
 
@@ -1908,7 +1941,7 @@ int sde_crtc_get_secure_transition_ops(struct drm_crtc *crtc,
 	switch (translation_mode) {
 	case SDE_DRM_FB_SEC_DIR_TRANS:
 		_sde_drm_fb_sec_dir_trans(smmu_state, secure_level,
-				catalog, old_valid_fb, &ops);
+			catalog, old_valid_fb, &ops, old_crtc_state);
 		if (clone_mode && (ops & SDE_KMS_OPS_SECURE_STATE_CHANGE))
 			ops |= SDE_KMS_OPS_WAIT_FOR_TX_DONE;
 		break;
@@ -2217,6 +2250,12 @@ static void sde_crtc_frame_event_cb(void *data, u32 event)
 		}
 	}
 
+	if ((event & SDE_ENCODER_FRAME_EVENT_SIGNAL_RETIRE_FENCE) &&
+		(sde_crtc && sde_crtc->retire_frame_event_sf)) {
+		sde_crtc->retire_frame_event_time = ktime_get();
+		sysfs_notify_dirent(sde_crtc->retire_frame_event_sf);
+	}
+
 	fevent->event = event;
 	fevent->crtc = crtc;
 	fevent->connector = cb_data->connector;
@@ -2461,6 +2500,13 @@ static void sde_crtc_frame_event_work(struct kthread_work *work)
 				(fevent->event & SDE_ENCODER_FRAME_EVENT_ERROR)
 				? SDE_FENCE_SIGNAL_ERROR : SDE_FENCE_SIGNAL);
 
+
+#ifdef OPLUS_FEATURE_ADFR
+	if (oplus_adfr_is_support()) {
+		sde_crtc_adfr_handle_frame_event(crtc, fevent);
+	}
+#endif
+
 	if (fevent->event & SDE_ENCODER_FRAME_EVENT_PANEL_DEAD)
 		SDE_ERROR("crtc%d ts:%lld received panel dead event\n",
 				crtc->base.id, ktime_to_ns(fevent->ts));
@@ -2471,9 +2517,8 @@ static void sde_crtc_frame_event_work(struct kthread_work *work)
 	SDE_ATRACE_END("crtc_frame_event");
 }
 #ifdef OPLUS_BUG_STABILITY
-/*Mark.Yao@PSW.MM.Display.LCD.Feature,2019-07-25 support onscreenfinger */
-extern u32 oppo_onscreenfp_vblank_count;
-extern ktime_t oppo_onscreenfp_pressed_time;
+extern u32 oplus_onscreenfp_vblank_count;
+extern ktime_t oplus_onscreenfp_pressed_time;
 #endif /* OPLUS_BUG_STABILITY */
 void sde_crtc_complete_commit(struct drm_crtc *crtc,
 		struct drm_crtc_state *old_state)
@@ -2490,9 +2535,6 @@ void sde_crtc_complete_commit(struct drm_crtc *crtc,
 
 	sde_core_perf_crtc_update(crtc, 0, false);
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.LCD.Feature,2018-11-21
- * Add for OnScreenFingerprint
-*/
 	{
 		struct sde_crtc_state *old_cstate;
 		struct sde_crtc_state *cstate;
@@ -2511,7 +2553,7 @@ void sde_crtc_complete_commit(struct drm_crtc *crtc,
 			notifier_data.data = &blank;
 
 			if (cstate->fingerprint_defer_sync) {
-				u32 target_vblank = oppo_onscreenfp_vblank_count + 1;
+				u32 target_vblank = oplus_onscreenfp_vblank_count + 1;
 				ktime_t vblanktime, exp_ktime;
 				u32 current_vblank;
 				int ret;
@@ -2522,8 +2564,8 @@ void sde_crtc_complete_commit(struct drm_crtc *crtc,
 				 * possible hbm setting insert hardware te irq and soft vblank update
 				 * cause vblank calc error, add 4ms check to avoid this scene
 				 */
-				if (current_vblank == (oppo_onscreenfp_vblank_count + 1)) {
-					exp_ktime = ktime_add_ms(oppo_onscreenfp_pressed_time, 4);
+				if (current_vblank == (oplus_onscreenfp_vblank_count + 1)) {
+					exp_ktime = ktime_add_ms(oplus_onscreenfp_pressed_time, 4);
 					if (ktime_compare_safe(exp_ktime, vblanktime) > 0) {
 						target_vblank++;
 						pr_err("hbm setting may hit into hardware irq and soft update, wait one more vblank\n");
@@ -2543,6 +2585,8 @@ void sde_crtc_complete_commit(struct drm_crtc *crtc,
 							msecs_to_jiffies(17));
 				}
 			}
+			pr_err("fingerprint status: %s",
+			       blank ? "pressed" : "up");
 			msm_drm_notifier_call_chain(MSM_DRM_ONSCREENFINGERPRINT_EVENT,
 					&notifier_data);
 		}
@@ -2565,16 +2609,15 @@ static void _sde_crtc_set_input_fence_timeout(struct sde_crtc_state *cstate)
 	cstate->input_fence_timeout_ns *= NSEC_PER_MSEC;
 }
 
-/**
- * _sde_crtc_clear_dim_layers_v1 - clear all dim layer settings
- * @cstate:      Pointer to sde crtc state
- */
-static void _sde_crtc_clear_dim_layers_v1(struct sde_crtc_state *cstate)
+void _sde_crtc_clear_dim_layers_v1(struct drm_crtc_state *state)
 {
 	u32 i;
+	struct sde_crtc_state *cstate;
 
-	if (!cstate)
+	if (!state)
 		return;
+
+	cstate = to_sde_crtc_state(state);
 
 	for (i = 0; i < cstate->num_dim_layers; i++)
 		memset(&cstate->dim_layer[i], 0, sizeof(cstate->dim_layer[i]));
@@ -2604,7 +2647,7 @@ static void _sde_crtc_set_dim_layer_v1(struct drm_crtc *crtc,
 
 	if (!usr_ptr) {
 		/* usr_ptr is null when setting the default property value */
-		_sde_crtc_clear_dim_layers_v1(cstate);
+		_sde_crtc_clear_dim_layers_v1(&cstate->base);
 		SDE_DEBUG("dim_layer data removed\n");
 		return;
 	}
@@ -3343,6 +3386,9 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 	struct sde_crtc_state *cstate;
 	struct sde_kms *sde_kms;
 	int idle_time = 0;
+#ifdef OPLUS_BUG_STABILITY
+	struct dsi_display *display = get_main_display();
+#endif /*OPLUS_BUG_STABILITY*/
 
 	if (!crtc || !crtc->dev || !crtc->dev->dev_private) {
 		SDE_ERROR("invalid crtc\n");
@@ -3380,6 +3426,14 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 
 	event_thread = &priv->event_thread[crtc->index];
 	idle_time = sde_crtc_get_property(cstate, CRTC_PROP_IDLE_TIMEOUT);
+#ifdef OPLUS_BUG_STABILITY
+	if (display && display->panel) {
+		if (display->panel->oplus_priv.dfps_idle_off)
+			idle_time = 0;
+	} else {
+		pr_err("%s : display or display->panel is NULL\n", __func__);
+	}
+#endif /*OPLUS_BUG_STABILITY*/
 
 	/*
 	 * If no mixers has been allocated in sde_crtc_atomic_check(),
@@ -3409,7 +3463,6 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 			sde_crtc->new_perf.llcc_active = true;
 	}
 
-	/* wait for acquire fences before anything else is done */
 	_sde_crtc_wait_for_fences(crtc);
 
 	/* schedule the idle notify delayed work */
@@ -4440,6 +4493,55 @@ static int _sde_crtc_check_secure_single_encoder(struct drm_crtc *crtc,
 	return 0;
 }
 
+static int _sde_crtc_check_secure_transition(struct drm_crtc *crtc,
+	struct drm_crtc_state *state, bool is_video_mode)
+{
+	struct sde_crtc_state *old_cstate = to_sde_crtc_state(crtc->state);
+	struct sde_crtc_state *new_cstate = to_sde_crtc_state(state);
+	int old_secure_session = old_cstate->secure_session;
+	int new_secure_session = new_cstate->secure_session;
+	int ret = 0;
+
+	/*
+	 * Direct transition from Secure Camera to Secure UI(&viceversa)
+	 * is not allowed
+	 */
+	if ((old_secure_session == SDE_SECURE_CAMERA_SESSION &&
+			new_secure_session == SDE_SECURE_UI_SESSION) ||
+		(old_secure_session == SDE_SECURE_UI_SESSION &&
+			new_secure_session == SDE_SECURE_CAMERA_SESSION)) {
+		SDE_EVT32(DRMID(crtc), old_secure_session,
+			new_secure_session, SDE_EVTLOG_ERROR);
+		ret = -EINVAL;
+	}
+
+	/*
+	 * In video mode, null commit is required for transition between
+	 * secure video & secure camera
+	 */
+	if (is_video_mode &&
+		((old_secure_session == SDE_SECURE_CAMERA_SESSION &&
+			new_secure_session == SDE_SECURE_VIDEO_SESSION) ||
+		(old_secure_session == SDE_SECURE_VIDEO_SESSION &&
+			new_secure_session == SDE_SECURE_CAMERA_SESSION))) {
+		SDE_EVT32(DRMID(crtc), old_secure_session,
+			new_secure_session, SDE_EVTLOG_ERROR);
+		ret = -EINVAL;
+	}
+
+	if (old_secure_session != new_secure_session)
+		SDE_EVT32(DRMID(crtc), old_secure_session,
+						new_secure_session);
+
+	SDE_DEBUG("old session: %d new session : %d\n",
+			old_secure_session, new_secure_session);
+	if (ret)
+		SDE_ERROR("invalid transition old:%d new:%d\n",
+			old_secure_session, new_secure_session);
+
+	return ret;
+}
+
 static int _sde_crtc_check_secure_state_smmu_translation(struct drm_crtc *crtc,
 	struct drm_crtc_state *state, struct sde_kms *sde_kms, int secure,
 	int fb_ns, int fb_sec, int fb_sec_dir)
@@ -4454,19 +4556,8 @@ static int _sde_crtc_check_secure_state_smmu_translation(struct drm_crtc *crtc,
 						MSM_DISPLAY_VIDEO_MODE);
 	}
 
-	/*
-	 * Secure display to secure camera needs without direct
-	 * transition is currently not allowed
-	 */
-	if (fb_sec_dir && secure == SDE_DRM_SEC_NON_SEC &&
-		smmu_state->state != ATTACHED &&
-		smmu_state->secure_level == SDE_DRM_SEC_ONLY) {
-
-		SDE_EVT32(DRMID(crtc), fb_ns, fb_sec_dir,
-			smmu_state->state, smmu_state->secure_level,
-			secure);
+	if (_sde_crtc_check_secure_transition(crtc, state, is_video_mode))
 		goto sec_err;
-	}
 
 	/*
 	 * In video mode check for null commit before transition
@@ -4532,6 +4623,33 @@ static int _sde_crtc_check_secure_conn(struct drm_crtc *crtc,
 	return 0;
 }
 
+static int _sde_crtc_populate_secure_session(struct drm_crtc_state *state,
+	int secure, int fb_ns, int fb_sec, int fb_sec_dir)
+{
+	struct sde_crtc_state *cstate = to_sde_crtc_state(state);
+
+	if (secure == SDE_DRM_SEC_ONLY && fb_sec_dir && !fb_sec && !fb_ns)
+		cstate->secure_session = SDE_SECURE_UI_SESSION;
+	else if (secure == SDE_DRM_SEC_NON_SEC && fb_sec_dir && !fb_sec)
+		cstate->secure_session = SDE_SECURE_CAMERA_SESSION;
+	else if (secure == SDE_DRM_SEC_NON_SEC && !fb_sec_dir && fb_sec)
+		cstate->secure_session = SDE_SECURE_VIDEO_SESSION;
+	else if (secure == SDE_DRM_SEC_NON_SEC && !fb_sec_dir &&
+			!fb_sec && fb_ns)
+		cstate->secure_session = SDE_NON_SECURE_SESSION;
+	else if (!fb_sec_dir && !fb_sec && !fb_ns)
+		cstate->secure_session = SDE_NULL_SESSION;
+	else {
+		SDE_ERROR(
+			"invalid session sec:%d fb_sec_dir:%d fb_sec:%d fb_ns:%d\n",
+				cstate->secure_session, fb_sec_dir,
+				fb_sec, fb_ns);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int _sde_crtc_check_secure_state(struct drm_crtc *crtc,
 		struct drm_crtc_state *state, struct plane_state pstates[],
 		int cnt)
@@ -4562,6 +4680,11 @@ static int _sde_crtc_check_secure_state(struct drm_crtc *crtc,
 	if (rc)
 		return rc;
 
+	rc = _sde_crtc_populate_secure_session(state, secure,
+				fb_ns, fb_sec, fb_sec_dir);
+	if (rc)
+		return rc;
+
 	rc = _sde_crtc_check_secure_blend_config(crtc, state, pstates, cstate,
 			sde_kms, cnt, secure, fb_ns, fb_sec, fb_sec_dir);
 	if (rc)
@@ -4572,7 +4695,7 @@ static int _sde_crtc_check_secure_state(struct drm_crtc *crtc,
 		return rc;
 
 	/*
-	 * secure_crtc is not allowed in a shared toppolgy
+	 * secure_crtc is not allowed in a shared topluslgy
 	 * across different encoders.
 	 */
 	rc = _sde_crtc_check_secure_single_encoder(crtc, state, fb_sec_dir);
@@ -4590,18 +4713,14 @@ static int _sde_crtc_check_secure_state(struct drm_crtc *crtc,
 }
 
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.LCD.Feature,2018-11-21
- * Add for OnScreenFingerprint
-*/
-extern int oppo_onscreenfp_status;
 extern int lcd_closebl_flag_fp;
-extern int oppo_dimlayer_hbm;
-extern int oppo_dimlayer_bl_alpha_value;
-extern int oppo_dimlayer_bl_enable;
-extern bool oppo_ffl_trigger_finish;
-extern int oppo_dimlayer_bl;
-extern ktime_t oppo_backlight_time;
-extern u32 oppo_backlight_delta;
+extern int oplus_dimlayer_hbm;
+extern int oplus_dimlayer_bl_alpha_value;
+extern int oplus_dimlayer_bl_enable;
+extern bool oplus_ffl_trigger_finish;
+extern int oplus_dimlayer_bl;
+extern ktime_t oplus_backlight_time;
+extern u32 oplus_backlight_delta;
 
 static int sde_crtc_onscreenfinger_atomic_check(struct sde_crtc_state *cstate,
 		struct plane_state *pstates, int cnt)
@@ -4611,8 +4730,9 @@ static int sde_crtc_onscreenfinger_atomic_check(struct sde_crtc_state *cstate,
 	int aod_index = -1;
 	int zpos = INT_MAX;
 	int mode;
-	int fp_mode = oppo_onscreenfp_status;
-	int dimlayer_hbm = oppo_dimlayer_hbm;
+	int panel_power_mode;
+	int fp_mode = oplus_onscreenfp_status;
+	int dimlayer_hbm = oplus_dimlayer_hbm;
 	int dimlayer_bl = 0;
 	int i;
 
@@ -4631,27 +4751,27 @@ static int sde_crtc_onscreenfinger_atomic_check(struct sde_crtc_state *cstate,
 	if (!is_dsi_panel(cstate->base.crtc))
 		return 0;
 
-	if (oppo_dimlayer_bl_enable) {
-		int backlight = oppo_get_panel_brightness();
+	if (oplus_dimlayer_bl_enable) {
+		int backlight = oplus_get_panel_brightness();
 
-		if (backlight > 1 && backlight < oppo_dimlayer_bl_alpha_value &&
-		    oppo_ffl_trigger_finish == true && !dimlayer_hbm) {
+		if (backlight > 1 && backlight < oplus_dimlayer_bl_alpha_value &&
+		    oplus_ffl_trigger_finish == true && !dimlayer_hbm) {
 			ktime_t now = ktime_get();
-			ktime_t delta = ktime_sub(now, oppo_backlight_time);
+			ktime_t delta = ktime_sub(now, oplus_backlight_time);
 
-			if (oppo_backlight_delta > 9) {
-				if (oppo_dimlayer_bl == 0 && ktime_to_ns(delta) > 25000000)
-					oppo_dimlayer_bl = 1;
+			if (oplus_backlight_delta > 9) {
+				if (oplus_dimlayer_bl == 0 && ktime_to_ns(delta) > 25000000)
+					oplus_dimlayer_bl = 1;
 			} else {
-				oppo_dimlayer_bl = 1;
+				oplus_dimlayer_bl = 1;
 			}
-			if (oppo_dimlayer_bl)
+			if (oplus_dimlayer_bl)
 				dimlayer_bl = 1;
 		} else {
-			oppo_dimlayer_bl = 0;
+			oplus_dimlayer_bl = 0;
 		}
 	} else {
-		oppo_dimlayer_bl = 0;
+		oplus_dimlayer_bl = 0;
 	}
 
 	if (fppressed_index >= 0) {
@@ -4666,6 +4786,7 @@ static int sde_crtc_onscreenfinger_atomic_check(struct sde_crtc_state *cstate,
 	cstate->fingerprint_mode = false;
 	cstate->fingerprint_pressed = false;
 
+	/* initalize dim layer */
 	if (dimlayer_hbm || dimlayer_bl) {
 		if (fp_index >= 0 && fppressed_index >= 0) {
 			if (pstates[fp_index].stage >= pstates[fppressed_index].stage) {
@@ -4675,44 +4796,80 @@ static int sde_crtc_onscreenfinger_atomic_check(struct sde_crtc_state *cstate,
 		}
 
 		if (lcd_closebl_flag_fp) {
-			oppo_underbrightness_alpha = 0;
+			oplus_underbrightness_alpha = 0;
 			cstate->fingerprint_dim_layer = NULL;
 			cstate->fingerprint_mode = false;
 			return 0;
 		}
 
-		if (dimlayer_hbm)
+		if (dimlayer_hbm && (oplus_get_panel_brightness() != 0)) {
+#if defined(OPLUS_FEATURE_PXLW_IRIS5)
+			struct dsi_display *display = get_main_display();
+
+			if (display == NULL || display->panel == NULL)
+				return false;
+
+			if ((!strcmp(display->panel->oplus_priv.vendor_name, "AMB655UV01") && (display->panel->oplus_priv.is_oplus_project))) {
+				//if pw set panel brightness,need delay hbm on&dimming layer to next frame.
+				if(igc_lut_update == 1) {
+					igc_lut_update = 0;
+					return 0;
+				}
+			}
+#endif
 			cstate->fingerprint_mode = true;
+		}
 		else
 			cstate->fingerprint_mode = false;
 
 		SDE_DEBUG("debug for get cstate->fingerprint_mode = %d\n", cstate->fingerprint_mode);
+		panel_power_mode = oplus_get_panel_power_mode();
 
+		/* when aod layer is present */
 		if (aod_index >= 0) {
-			if (zpos > pstates[aod_index].stage)
-				zpos = pstates[aod_index].stage;
-			pstates[aod_index].stage++;
+			/* set dimlayer alpha transparent, appear AOD layer by force */
+			if (((fp_index >= 0) || (fppressed_index < 0)) &&
+				((panel_power_mode == SDE_MODE_DPMS_LP1) || (panel_power_mode == SDE_MODE_DPMS_LP2))) {
+				oplus_set_aod_dim_alpha(CUST_A_TRANS);
+			}
+			if (((fp_index >= 0) || (fppressed_index < 0)) &&
+				(panel_power_mode == SDE_MODE_DPMS_ON)) {
+				oplus_set_aod_dim_alpha(CUST_A_OPAQUE);
+			}
+			/*
+			 * set dimlayer alpha opaque, disappear AOD layer by force when pressed down
+			 * and SDE_MODE_DPMS_LP1/SDE_MODE_DPMS_LP2
+			 */
+			if (((fp_mode == 1) && (panel_power_mode != SDE_MODE_DPMS_ON))
+				|| (oplus_request_power_status == OPLUS_DISPLAY_POWER_ON))
+				oplus_set_aod_dim_alpha(CUST_A_OPAQUE);
+
+		} else { /* when screen on, restore dimlayer alpha */
+			if (oplus_get_panel_brightness() != 0)
+				oplus_set_aod_dim_alpha(CUST_A_NO);
+		}
+
+		SDE_DEBUG("aod_index = %d, fp_index= %d, fppressed_index = %d, fp_mode=%d, panel_power_mode = %d, bl=%d\n",
+			aod_index, fp_index, fppressed_index, fp_mode, panel_power_mode, oplus_get_panel_brightness());
+
+		/* find the min zpos in fp_index/fppressed_index stage to dim layer, then fp_index/fppressed_index stage increase one */
+		if (fp_index >= 0) {
+			if (zpos > pstates[fp_index].stage)
+				zpos = pstates[fp_index].stage;
 		}
 		if (fppressed_index >= 0) {
 			if (zpos > pstates[fppressed_index].stage)
 				zpos = pstates[fppressed_index].stage;
-			pstates[fppressed_index].stage++;
-		}
-		if (fp_index >= 0) {
-			if (zpos > pstates[fp_index].stage)
-				zpos = pstates[fp_index].stage;
-			pstates[fp_index].stage++;
 		}
 
+		/* increase zpos(sde stage) which is on the dim layer, stage which is under dim layer zpos preserve */
 		for (i = 0; i < cnt; i++) {
-			if (i == fp_index || i == fppressed_index ||
-			    i == aod_index)
-				continue;
 			if (pstates[i].stage >= zpos) {
 				pstates[i].stage++;
 			}
 		}
 
+		/* when no aod_index/fppressed_index/fp_index layer, dim layer's zpos is the most stage */
 		if (zpos == INT_MAX) {
 			zpos = 0;
 			for (i = 0; i < cnt; i++) {
@@ -4728,14 +4885,19 @@ static int sde_crtc_onscreenfinger_atomic_check(struct sde_crtc_state *cstate,
 			SDE_EVT32(zpos, fp_index, aod_index, fppressed_index, cstate->num_dim_layers);
 			return -EINVAL;
 		}
+#ifdef OPLUS_FEATURE_AOD_RAMLESS
+		if (fppressed_index >= 0 && !(is_oplus_ramless_aod() && cstate->base.mode.flags & DRM_MODE_FLAG_CMD_MODE_PANEL))
+#else
 		if (fppressed_index >= 0)
+#endif /* OPLUS_FEATURE_AOD_RAMLESS */
 			cstate->fingerprint_pressed = true;
 		else
 			cstate->fingerprint_pressed = false;
 
 		SDE_DEBUG("debug for get cstate->fingerprint_pressed = %d\n", cstate->fingerprint_pressed);
 	} else {
-		oppo_underbrightness_alpha = 0;
+		oplus_underbrightness_alpha = 0;
+		oplus_set_aod_dim_alpha(CUST_A_NO);
 		cstate->fingerprint_dim_layer = NULL;
 		cstate->fingerprint_mode = false;
 		cstate->fingerprint_pressed = false;
@@ -4847,13 +5009,13 @@ static int _sde_crtc_check_get_pstates(struct drm_crtc *crtc,
 
 	for (i = 1; i < SSPP_MAX; i++) {
 		if (pipe_staged[i]) {
-			if (is_sde_plane_virtual(pipe_staged[i]->plane)) {
-				SDE_ERROR(
-					"r1 only virt plane:%d not supported\n",
-					pipe_staged[i]->plane->base.id);
-				return -EINVAL;
-			}
 			sde_plane_clear_multirect(pipe_staged[i]);
+			if (is_sde_plane_virtual(pipe_staged[i]->plane)) {
+				struct sde_plane_state *psde_state;
+				SDE_DEBUG("r1 only virt plane:%d staged\n",pipe_staged[i]->plane->base.id);
+				psde_state = to_sde_plane_state(pipe_staged[i]);
+				psde_state->multirect_index = SDE_SSPP_RECT_1;
+			}
 		}
 	}
 
@@ -4967,9 +5129,12 @@ static int _sde_crtc_atomic_check_pstates(struct drm_crtc *crtc,
 		return rc;
 
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.Service.Feature,2018/11/21
- * For OnScreenFingerprint feature
-*/
+#ifdef OPLUS_FEATURE_AOD_RAMLESS
+	rc = oplus_ramless_panel_display_atomic_check(crtc, state);
+	if (rc)
+		return rc;
+#endif /* OPLUS_FEATURE_AOD_RAMLESS */
+
 	rc = sde_crtc_onscreenfinger_atomic_check(cstate, pstates, cnt);
 	if (rc)
 		return rc;
@@ -5287,9 +5452,6 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 				CRTC_PROP_CAPTURE_OUTPUT);
 
 #ifdef OPLUS_BUG_STABILITY
-/* Gou shengjun@PSW.MM.Display.LCD.Feature,2018-11-21
- * Support custom propertys
-*/
 	msm_property_install_range(&sde_crtc->property_info,"CRTC_CUST",
 		0x0, 0, INT_MAX, 0, CRTC_PROP_CUSTOM);
 #endif
@@ -5311,7 +5473,6 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 		msm_property_install_volatile_range(&sde_crtc->property_info,
 			"dim_layer_v1", 0x0, 0, ~0, 0, CRTC_PROP_DIM_LAYER_V1);
 #ifdef OPLUS_BUG_STABILITY
-/*Mark.Yao@PSW.MM.Display.LCD.Stable,2019-04-17 fix dc backlight aging test fail */
 		sde_kms_info_add_keyint(info, "dim_layer_v1_max_layers",
 				SDE_MAX_DIM_LAYERS - 1);
 #else
@@ -6160,6 +6321,7 @@ static int _sde_debugfs_fence_status_show(struct seq_file *s, void *data)
 			pstate->stage);
 
 		fence = pstate->input_fence;
+		SDE_EVT32(DRMID(crtc), fence);
 		if (fence)
 			sde_fence_list_dump(fence, &s);
 	}
@@ -6556,6 +6718,12 @@ int sde_crtc_post_init(struct drm_device *dev, struct drm_crtc *crtc)
 	if (!sde_crtc->vsync_event_sf)
 		SDE_ERROR("crtc:%d vsync_event sysfs create failed\n",
 						crtc->base.id);
+
+	sde_crtc->retire_frame_event_sf = sysfs_get_dirent(
+		sde_crtc->sysfs_dev->kobj.sd, "retire_frame_event");
+	if (!sde_crtc->retire_frame_event_sf)
+		SDE_ERROR("crtc:%d retire frame event sysfs create failed\n",
+			crtc->base.id);
 
 end:
 	return rc;

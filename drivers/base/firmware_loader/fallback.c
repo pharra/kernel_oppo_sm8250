@@ -547,7 +547,6 @@ static int fw_load_sysfs_fallback(struct fw_sysfs *fw_sysfs,
 	struct fw_priv *fw_priv = fw_sysfs->fw_priv;
 
 #ifdef OPLUS_FEATURE_TP_BSPFWUPDATE
-	//Ping.Zhang@PSW.BSP.Tp, 2019-10-15, Add interface to get proper fw
 	char *envp[2]={"FwUp=compare", NULL};
 #endif/*OPLUS_FEATURE_TP_BSPFWUPDATE*/
 
@@ -572,7 +571,6 @@ static int fw_load_sysfs_fallback(struct fw_sysfs *fw_sysfs,
 		dev_set_uevent_suppress(f_dev, false);
 		dev_dbg(f_dev, "firmware: requesting %s\n", fw_priv->fw_name);
 #ifdef OPLUS_FEATURE_TP_BSPFWUPDATE
-		//Ping.Zhang@PSW.BSP.Tp, 2019-10-15, Add interface to get proper fw
 		if (opt_flags & FW_OPT_COMPARE) {
 			kobject_uevent_env(&fw_sysfs->dev.kobj, KOBJ_CHANGE,envp);
 		} else {
@@ -586,7 +584,7 @@ static int fw_load_sysfs_fallback(struct fw_sysfs *fw_sysfs,
 	}
 
 	retval = fw_sysfs_wait_timeout(fw_priv, timeout);
-	if (retval < 0) {
+	if (retval < 0 && retval != -ENOENT) {
 		mutex_lock(&fw_lock);
 		fw_load_abort(fw_sysfs);
 		mutex_unlock(&fw_lock);

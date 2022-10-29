@@ -546,12 +546,8 @@ static int oppo_shortc_gpio_init(struct oppo_chg_chip *chip)
 
 	chip->normalchg_gpio.pinctrl = devm_pinctrl_get(chip->dev);
 
-	chip->normalchg_gpio.shortc_active =
-		pinctrl_lookup_state(chip->normalchg_gpio.pinctrl, "shortc_active");
-	if (IS_ERR_OR_NULL(chip->normalchg_gpio.shortc_active)) {
-		chg_err("get shortc_active fail\n");
-		return -EINVAL;
-	}
+	chg->lpd_disabled = chg->lpd_disabled ||
+			of_property_read_bool(node, "qcom,lpd-disable");
 
 	pinctrl_select_state(chip->normalchg_gpio.pinctrl, chip->normalchg_gpio.shortc_active);
 
@@ -2540,9 +2536,18 @@ static int oppo_get_otg_online_status(void)
 		pre_typec_otg = typec_otg;
 	}
 
-	chip->otg_online = online;
-	return online;
-}
+	/*
+	 * Across reboot, standard typeC cables get detected as legacy
+	 * cables due to VBUS attachment prior to CC attach/detach. Reset
+	 * the legacy detection logic by enabling/disabling the typeC mode.
+	 */
+	if (val & TYPEC_LEGACY_CABLE_STATUS_BIT) {
+		pval.intval = POWER_SUPPLY_TYPEC_PR_NONE;
+		rc = smblib_set_prop_typec_power_role(chg, &pval);
+		if (rc < 0) {
+			dev_err(chg->dev, "Couldn't disable TYPEC rc=%d\n", rc);
+			return rc;
+		}
 
 static void oppo_set_otg_switch_status(bool value)
 {
@@ -2550,18 +2555,11 @@ static void oppo_set_otg_switch_status(bool value)
 	struct smb_charger *chg = NULL;
 	struct oppo_chg_chip *chip = g_oppo_chip;
 
-	if (!chip) {
-		printk(KERN_ERR "[OPPO_CHG][%s]: smb5_chg not ready!\n", __func__);
-		return;
-	}
-	chg = &chip->pmic_spmi.smb5_chip->chg;
-
-	/*boot-up with newman OTG connected, android will set persist.sys.oppo.otg_support, so...*/
-	if (oppo_ccdetect_check_is_gpio(chip) == true) {
-		level = gpio_get_value(chg->ccdetect_gpio);
-		if (level != 1) {
-			printk(KERN_ERR "[OPPO_CHG][%s]: gpio[%s], should set, return\n", __func__, level ? "H" : "L");
-			return;
+		pval.intval = POWER_SUPPLY_TYPEC_PR_DUAL;
+		rc = smblib_set_prop_typec_power_role(chg, &pval);
+		if (rc < 0) {
+			dev_err(chg->dev, "Couldn't enable TYPEC rc=%d\n", rc);
+			return rc;
 		}
 	}
 

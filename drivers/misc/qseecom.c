@@ -2,7 +2,7 @@
 /*
  * QTI Secure Execution Environment Communicator (QSEECOM) driver
  *
- * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "QSEECOM: %s: " fmt, __func__
@@ -2623,7 +2623,12 @@ err_resp:
 		case QSEOS_RESULT_CBACK_REQUEST:
 			pr_warn("get cback req app_id = %d, resp->data = %d\n",
 				data->client.app_id, resp->data);
-			resp->resp_type = SMCINVOKE_RESULT_INBOUND_REQ_NEEDED;
+			//resp->resp_type = SMCINVOKE_RESULT_INBOUND_REQ_NEEDED;
+			/* We are here because scm call sent to TZ has requested
+			 * for another callback request. This call has been a
+			 * success and hence setting result = 0
+			 */
+			//resp->result = 0;
 			break;
 		default:
 			pr_err("fail:resp res= %d,app_id = %d,lstr = %d\n",
@@ -3037,8 +3042,9 @@ static int __qseecom_unload_app(struct qseecom_dev_handle *data,
 			sizeof(struct qseecom_unload_app_ireq),
 			&resp, sizeof(resp));
 	if (ret) {
-		pr_err("scm_call to unload app (id = %d) failed\n", app_id);
-		return -EFAULT;
+		pr_err("scm_call to unload app (id = %d) failed ret: %d\n",
+			app_id, ret);
+		return ret;
 	}
 	switch (resp.result) {
 	case QSEOS_RESULT_SUCCESS:
@@ -5288,8 +5294,10 @@ int qseecom_send_command(struct qseecom_handle *handle, void *send_buf,
 		}
 		perf_enabled = true;
 	}
-	if (!strcmp(data->client.app_name, "securemm"))
+	if (!strcmp(data->client.app_name, "securemm") ||
+	    !strcmp(data->client.app_name, "slateapp")) {
 		data->use_legacy_cmd = true;
+	}
 
 	dmac_flush_range(req.cmd_req_buf, req.cmd_req_buf + req.cmd_req_len);
 
@@ -5364,6 +5372,13 @@ int qseecom_process_listener_from_smcinvoke(struct scm_desc *desc)
 		return -EINVAL;
 	}
 
+	/*
+	 * smcinvoke expects result in scm call resp.ret[1] and type in ret[0],
+	 * while qseecom expects result in ret[0] and type in ret[1].
+	 * To simplify API interface and code changes in smcinvoke, here
+	 * internally switch result and resp_type to let qseecom work with
+	 * smcinvoke and upstream scm driver protocol.
+	 */
 	resp.result = desc->ret[0];	/*req_cmd*/
 	resp.resp_type = desc->ret[1]; /*incomplete:unused;blocked:session_id*/
 	resp.data = desc->ret[2];	/*listener_id*/

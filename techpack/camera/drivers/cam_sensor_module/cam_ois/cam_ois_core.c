@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020, Oplus. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -16,6 +17,10 @@
 #include "cam_packet_util.h"
 #include "oplus_cam_ois_core.h"
 #include "onsemi_fw/fw_download_interface.h"
+
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
+#define OPLUS_FEATURE_CAMERA_COMMON
+#endif
 
 int32_t cam_ois_construct_default_power_setting(
 	struct cam_sensor_power_ctrl_t *power_info)
@@ -156,7 +161,7 @@ static int cam_ois_power_up(struct cam_ois_ctrl_t *o_ctrl)
 	rc = camera_io_init(&o_ctrl->io_master_info);
 	if (rc)
 		CAM_ERR(CAM_OIS, "cci_init failed: rc: %d", rc);
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 	/*add by sunshoulei@Camera 20200520, for OIS */
 	InitOIS(o_ctrl);
 #endif
@@ -192,7 +197,7 @@ static int cam_ois_power_down(struct cam_ois_ctrl_t *o_ctrl)
 		CAM_ERR(CAM_OIS, "failed: power_info %pK", power_info);
 		return -EINVAL;
 	}
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 	/*we need to exit poll thread befor power down*/
 	mutex_lock(&(o_ctrl->ois_poll_thread_mutex));
 	forceExitpoll(o_ctrl);
@@ -207,7 +212,7 @@ static int cam_ois_power_down(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	camera_io_release(&o_ctrl->io_master_info);
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 	/*add by sunshoulei@Camera 20200520, for OIS */
 	DeinitOIS(o_ctrl);
 #endif
@@ -234,17 +239,17 @@ static int cam_ois_apply_settings(struct cam_ois_ctrl_t *o_ctrl,
 	list_for_each_entry(i2c_list,
 		&(i2c_set->list_head), list) {
 		if (i2c_list->op_code ==  CAM_SENSOR_I2C_WRITE_RANDOM) {
-#ifdef VENDOR_EDIT
-			rc = cam_ois_apply_settings_oem(o_ctrl,i2c_list);
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+                     rc = cam_ois_apply_settings_oem(o_ctrl,i2c_list);
 #else
-			rc = camera_io_dev_write(&(o_ctrl->io_master_info),
-				&(i2c_list->i2c_settings));
+		       rc = camera_io_dev_write(&(o_ctrl->io_master_info),
+			     &(i2c_list->i2c_settings));
 #endif
-			if (rc < 0) {
-				CAM_ERR(CAM_OIS,
-					"Failed in Applying i2c wrt settings");
-				return rc;
-			}
+		       if (rc < 0) {
+			     CAM_ERR(CAM_OIS,
+		                  "Failed in Applying i2c wrt settings");
+			     return rc;
+		       }
 		} else if (i2c_list->op_code == CAM_SENSOR_I2C_POLL) {
 			size = i2c_list->i2c_settings.size;
 			for (i = 0; i < size; i++) {
@@ -307,12 +312,15 @@ static int cam_ois_slaveInfo_pkt_parser(struct cam_ois_ctrl_t *o_ctrl,
 	return rc;
 }
 
-#ifndef VENDOR_EDIT
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 {
 	uint16_t                           total_bytes = 0;
-	uint8_t                           *ptr = NULL;
-	int32_t                            rc = 0, cnt;
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
+        uint8_t                           *ptr = NULL;
+        int32_t                            cnt;
+#endif
+	int32_t                            rc = 0;
 	uint32_t                           fw_size;
 	const struct firmware             *fw = NULL;
 	const char                        *fw_name_prog = NULL;
@@ -462,7 +470,7 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		sizeof(dev_config)))
 		return -EFAULT;
 
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
        set_ois_thread(ioctl_ctrl);
 #endif
 
@@ -603,12 +611,12 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			o_ctrl->cam_ois_state = CAM_OIS_CONFIG;
 		}
 
-#ifdef VENDOR_EDIT
-		rc = oplus_cam_ois_pkt_parse(o_ctrl);
-		if (rc) {
-			CAM_ERR(CAM_OIS, "Failed OIS pkt_parse");
-			goto pwr_dwn;
-		}
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+               rc = oplus_cam_ois_pkt_parse(o_ctrl);
+               if (rc) {
+                    CAM_ERR(CAM_OIS, "Failed OIS pkt_parse");
+                    goto pwr_dwn;
+               }
 #else
 		if (o_ctrl->ois_fw_flag) {
 			rc = cam_ois_fw_download(o_ctrl);
@@ -617,24 +625,30 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 				goto pwr_dwn;
 			}
 		}
-#endif
+		#endif
 
 		rc = cam_ois_apply_settings(o_ctrl, &o_ctrl->i2c_init_data);
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 		if ((rc == -EAGAIN) &&
 			(o_ctrl->io_master_info.master_type == CCI_MASTER)) {
 			CAM_WARN(CAM_OIS,
 				"CCI HW is restting: Reapplying INIT settings");
-			usleep_range(1000, 1010);
+			usleep_range(5000, 5010);
 			rc = cam_ois_apply_settings(o_ctrl,
 				&o_ctrl->i2c_init_data);
 		}
+#endif
 		if (rc < 0) {
 			CAM_ERR(CAM_OIS,
 				"Cannot apply Init settings: rc = %d",
 				rc);
 			goto pwr_dwn;
 		}
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		if (o_ctrl->is_ois_calib && strstr(o_ctrl->ois_name, "lc898") == NULL) {
+#else
 		if (o_ctrl->is_ois_calib) {
+#endif
 			rc = cam_ois_apply_settings(o_ctrl,
 				&o_ctrl->i2c_calib_data);
 			if (rc) {
@@ -678,7 +692,7 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			return rc;
 		}
 
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 		if (strstr(o_ctrl->ois_name, "lc898")
 			|| strstr(o_ctrl->ois_name, "sem1215")
 			|| strstr(o_ctrl->ois_name, "bu63169")) {
@@ -781,7 +795,7 @@ void cam_ois_shutdown(struct cam_ois_ctrl_t *o_ctrl)
 	struct cam_ois_soc_private *soc_private =
 		(struct cam_ois_soc_private *)o_ctrl->soc_info.soc_private;
 	struct cam_sensor_power_ctrl_t *power_info = &soc_private->power_info;
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 	/*add by sunshoulei@Camera 20200520, for OIS */
 	DeinitOIS(o_ctrl);
 #endif
@@ -895,6 +909,9 @@ int cam_ois_driver_cmd(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		}
 		break;
 	case CAM_RELEASE_DEV:
+		CAM_INFO(CAM_OIS, "CAM_RELEASE_DEV: %d",
+			o_ctrl->cam_ois_state);
+
 		if (o_ctrl->cam_ois_state == CAM_OIS_START) {
 			rc = -EINVAL;
 			CAM_WARN(CAM_OIS,
@@ -951,7 +968,7 @@ int cam_ois_driver_cmd(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		}
 		o_ctrl->cam_ois_state = CAM_OIS_CONFIG;
 		break;
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
        case CAM_GET_OIS_EIS_HALL:
        case CAM_WRITE_CALIBRATION_DATA:
        case CAM_WRITE_AE_SYNC_DATA:{

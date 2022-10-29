@@ -14,8 +14,7 @@
 #include "dsi_catalog.h"
 #include "sde_dbg.h"
 #if defined(OPLUS_FEATURE_PXLW_IRIS5)
-// Pixelworks@MULTIMEDIA.DISPLAY, 2020/06/02, Iris5 Feature
-#include "../../iris/dsi_iris5_api.h"
+#include "iris/dsi_iris5_api.h"
 #endif
 #define MMSS_MISC_CLAMP_REG_OFF           0x0014
 #define DSI_CTRL_DYNAMIC_FORCE_ON         (0x23F|BIT(8)|BIT(9)|BIT(11)|BIT(21))
@@ -680,8 +679,8 @@ void dsi_ctrl_hw_cmn_kickoff_command(struct dsi_ctrl_hw *ctrl,
 	reg |= BIT(16);/* Disable read watermark */
 
 #if defined(OPLUS_FEATURE_PXLW_IRIS5)
-	// Pixelworks@MULTIMEDIA.DISPLAY, 2020/06/02, set DMA FIFO read and write watermark to 15/16 full */
-	if (iris_get_feature())
+	/* set DMA FIFO read watermark to 15/16 full */
+	if (iris_is_chip_supported())
 		reg = 0x33;
 #endif
 	DSI_W32(ctrl, DSI_DMA_FIFO_CTRL, reg);
@@ -786,7 +785,6 @@ void dsi_ctrl_hw_cmn_reset_cmd_fifo(struct dsi_ctrl_hw *ctrl)
 void dsi_ctrl_hw_cmn_trigger_command_dma(struct dsi_ctrl_hw *ctrl)
 {
 	DSI_W32(ctrl, DSI_CMD_MODE_DMA_SW_TRIGGER, 0x1);
-	DSI_CTRL_HW_DBG(ctrl, "CMD DMA triggered\n");
 }
 
 /**

@@ -2411,12 +2411,7 @@ static int sleep_for_data(struct stmvl53l1_data *data, pid_t pid,
 	int rc;
 
 	mutex_unlock(&data->work_mutex);
-	#ifndef VENDOR_EDIT
-	/*modify by hongbo.dai@Camea,20181120 for fix dead lock */
-	if(data->preset_mode == VL53L1_PRESETMODE_LITE_RANGING){
-	#else
 	if (1) {
-	#endif
 		rc = wait_event_killable(data->waiter_for_data,
 		sleep_for_data_condition(data, pid, head));
 	}else{
@@ -3989,7 +3984,6 @@ int stmvl53l1_intr_handler(struct stmvl53l1_data *data)
 		 * Such dummy irq also occured during offset and crosstalk
 		 * calibration procedures.
 		 */
-        /* Jianwei.Luo@Cam.Drv 20190128 remove the log in the interrupt for bug: 1785866, case: 03859530 */
 		//vl53l1_dbgmsg("got intr but not on (dummy or calibration)\n");
 		rc = 0;
 	}
@@ -4139,6 +4133,8 @@ int stmvl53l1_setup(struct stmvl53l1_data *data)
 		vl53l1_errmsg("VL53L1_GetDeviceInfo %d\n", rc);
 		goto exit_unregister_dev_ps;
 	}
+	vl53l1_errmsg("device name %s\ntype %s\n",
+			dev_info.Name, dev_info.Type);
 
 	/* get managed data here */
 	rc = VL53L1_GetDmaxReflectance(&data->stdev, &data->dmax_reflectance);
@@ -4194,7 +4190,7 @@ int stmvl53l1_setup(struct stmvl53l1_data *data)
 
 	data->miscdev.name = data->name;
 	data->miscdev.fops = &stmvl53l1_ranging_fops;
-	vl53l1_info("Misc device registration name:%s\n", data->miscdev.name);
+	vl53l1_errmsg("Misc device registration name:%s\n", data->miscdev.name);
 	rc = misc_register(&data->miscdev);
 	if (rc != 0) {
 		vl53l1_errmsg("misc dev reg fail\n");

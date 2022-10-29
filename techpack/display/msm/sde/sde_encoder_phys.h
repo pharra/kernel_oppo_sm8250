@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __SDE_ENCODER_PHYS_H__
@@ -82,7 +82,7 @@ struct sde_encoder_virt_ops {
 	void (*handle_frame_done)(struct drm_encoder *parent,
 			struct sde_encoder_phys *phys, u32 event);
 	void (*get_qsync_fps)(struct drm_encoder *parent,
-			u32 *qsync_fps);
+			u32 *qsync_fps, u32 vrr_fps);
 };
 
 /**
@@ -330,6 +330,18 @@ struct sde_encoder_phys {
 	bool in_clone_mode;
 	int vfp_cached;
 	enum frame_trigger_mode_type frame_trigger_mode;
+
+#ifdef OPLUS_FEATURE_ADFR
+	//2 : transferring (wr_ptr_irq)
+	//1 : transfer finish (pp_tx_done_irq)
+	//0 : panel read finish (rd_ptr_irq)
+	//disable qsync or wait vblank to avoid tearing
+	atomic_t frame_state;
+	//threshold for current frame
+	u32 current_sync_threshold_start;
+	//threshold for current qsync mode
+	u32 qsync_sync_threshold_start;
+#endif
 };
 
 static inline int sde_encoder_phys_inc_pending(struct sde_encoder_phys *phys)
@@ -611,6 +623,26 @@ static inline enum sde_3d_blend_mode sde_encoder_helper_get_3d_blend_mode(
 }
 
 /**
+ * sde_encoder_phys_is_cwb_disabling - Check if CWB encoder attached to this
+ *	 CRTC and it is in SDE_ENC_DISABLING state.
+ * @phys_enc: Pointer to physical encoder structure
+ * @crtc: drm crtc
+ * @Return: true if cwb encoder is in disabling state
+ */
+static inline bool sde_encoder_phys_is_cwb_disabling(
+	struct sde_encoder_phys *phys, struct drm_crtc *crtc)
+{
+	struct sde_encoder_phys_wb *wb_enc;
+
+	if (!phys || !phys->in_clone_mode ||
+				phys->enable_state != SDE_ENC_DISABLING)
+		return false;
+
+	wb_enc = container_of(phys, struct sde_encoder_phys_wb, base);
+	return (wb_enc->crtc == crtc) ? true : false;
+}
+
+/**
  * sde_encoder_helper_split_config - split display configuration helper function
  *	This helper function may be used by physical encoders to configure
  *	the split display related registers.
@@ -760,5 +792,7 @@ void sde_encoder_helper_setup_misr(struct sde_encoder_phys *phys_enc,
  */
 int sde_encoder_helper_collect_misr(struct sde_encoder_phys *phys_enc,
 		bool nonblock, u32 *misr_value);
+
+ktime_t sde_encoder_get_last_vsync_ts_cmd(struct sde_encoder_phys *phys_enc);
 
 #endif /* __sde_encoder_phys_H__ */

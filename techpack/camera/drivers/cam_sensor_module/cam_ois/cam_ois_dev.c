@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2018, 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020, Oplus. All rights reserved.
  */
 
 #include "cam_ois_dev.h"
@@ -29,25 +30,6 @@ static long cam_ois_subdev_ioctl(struct v4l2_subdev *sd,
 	return rc;
 }
 
-static int cam_ois_subdev_open(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh)
-{
-	struct cam_ois_ctrl_t *o_ctrl =
-		v4l2_get_subdevdata(sd);
-
-	if (!o_ctrl) {
-		CAM_ERR(CAM_OIS, "o_ctrl ptr is NULL");
-			return -EINVAL;
-	}
-
-	mutex_lock(&(o_ctrl->ois_mutex));
-	o_ctrl->open_cnt++;
-	CAM_DBG(CAM_OIS, "OIS open count %d", o_ctrl->open_cnt);
-	mutex_unlock(&(o_ctrl->ois_mutex));
-
-	return 0;
-}
-
 static int cam_ois_subdev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
@@ -60,14 +42,7 @@ static int cam_ois_subdev_close(struct v4l2_subdev *sd,
 	}
 
 	mutex_lock(&(o_ctrl->ois_mutex));
-	if (o_ctrl->open_cnt <= 0) {
-		mutex_unlock(&(o_ctrl->ois_mutex));
-		return -EINVAL;
-	}
-	o_ctrl->open_cnt--;
-	CAM_DBG(CAM_OIS, "OIS open count %d", o_ctrl->open_cnt);
-	if (o_ctrl->open_cnt == 0)
-		cam_ois_shutdown(o_ctrl);
+	cam_ois_shutdown(o_ctrl);
 	mutex_unlock(&(o_ctrl->ois_mutex));
 
 	return 0;
@@ -139,7 +114,6 @@ static long cam_ois_init_subdev_do_ioctl(struct v4l2_subdev *sd,
 #endif
 
 static const struct v4l2_subdev_internal_ops cam_ois_internal_ops = {
-	.open  = cam_ois_subdev_open,
 	.close = cam_ois_subdev_close,
 };
 
@@ -227,9 +201,8 @@ static int cam_ois_i2c_driver_probe(struct i2c_client *client,
 		goto soc_free;
 
 	o_ctrl->cam_ois_state = CAM_OIS_INIT;
-	o_ctrl->open_cnt = 0;
 
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 	oplus_cam_ois_fw_init(o_ctrl);
 #endif
 
@@ -334,9 +307,8 @@ static int32_t cam_ois_platform_driver_probe(
 
 	platform_set_drvdata(pdev, o_ctrl);
 	o_ctrl->cam_ois_state = CAM_OIS_INIT;
-	o_ctrl->open_cnt = 0;
 
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
        init_ois_hall_data(o_ctrl);
 #endif
 
@@ -366,7 +338,7 @@ static int cam_ois_platform_driver_remove(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-#ifdef VENDOR_EDIT
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 	oplus_cam_ois_deinit(o_ctrl);
 #endif
 

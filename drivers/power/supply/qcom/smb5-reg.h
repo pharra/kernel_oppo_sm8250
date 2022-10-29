@@ -59,7 +59,6 @@ enum {
 #define BAT_TEMP_STATUS_TOO_COLD_AFP_BIT	BIT(0)
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* tongfeng.Huang@BSP.CHG.Basic, 2018/09/27,  Add for charger */
 #define BATTERY_CHARGER_STATUS_8_REG			(CHGR_BASE + 0x0E)
 //#define PRE_FAST_BIT					BIT(7)
 #define PRE_FULLON_BIT					BIT(6)
@@ -85,7 +84,6 @@ enum {
 
 #define CHGR_FAST_CHARGE_CURRENT_CFG_REG	(CHGR_BASE + 0x61)
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* tongfeng.Huang@BSP.CHG.Basic, 2018/09/27,  Add for charger */
 #define TCCC_CHARGE_CURRENT_TERMINATION_CFG_REG		(CHGR_BASE + 0x63)
 #define TCCC_CHARGE_CURRENT_TERMINATION_SETTING_MASK	GENMASK(3, 0)
 #endif
@@ -162,11 +160,12 @@ enum {
 #define DCDC_CMD_OTG_REG			(DCDC_BASE + 0x40)
 #define OTG_EN_BIT				BIT(0)
 
+#define DCDC_VBOOST_CFG				(DCDC_BASE + 0x86)
+
 #define DCDC_FSW_SEL_REG			(DCDC_BASE + 0x50)
 
 #define DCDC_OTG_CURRENT_LIMIT_CFG_REG		(DCDC_BASE + 0x52)
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* Kun.Zhang@PSW.BSP.CHG.Basic, 2019/09/13, Add for set otg current */
 #define DCDC_OTG_CURRENT_LIMIT_1000MA_BIT	BIT(2)
 #endif /* OPLUS_FEATURE_CHG_BASIC */
 
@@ -283,6 +282,12 @@ enum {
 #define FORCE_5V				BIT(0)
 #define FORCE_NULL				0
 
+#define USBIN_ADAPTER_ALLOW_OVERRIDE_REG (USBIN_BASE + 0x44)
+#define USBIN_ADAPTER_CONTINUOUS_BIT			         BIT(3)
+#define USBIN_ADAPTER_FORCE_9V_BIT			         BIT(1)
+#define USBIN_ADAPTER_FORCE_5V_BIT			         BIT(0)
+
+
 #define USB_CMD_PULLDOWN_REG			(USBIN_BASE + 0x45)
 #define EN_PULLDOWN_USB_IN_BIT			BIT(0)
 
@@ -296,6 +301,19 @@ enum {
 	HVDCP_PULSE_COUNT_MAX_QC2_9V = 0x40,
 	HVDCP_PULSE_COUNT_MAX_QC2_12V = 0x80,
 	HVDCP_PULSE_COUNT_MAX_QC2_INVALID = 0xC0
+};
+
+#define USBIN_ADAPTER_ALLOW_CFG_REG		(USBIN_BASE + 0x60)
+enum {
+	USBIN_ADAPTER_ALLOW_5V		= 0,
+	USBIN_ADAPTER_ALLOW_9V		= 2,
+	USBIN_ADAPTER_ALLOW_5V_OR_9V	= 3,
+	USBIN_ADAPTER_ALLOW_12V		= 4,
+	USBIN_ADAPTER_ALLOW_5V_OR_12V	= 5,
+	USBIN_ADAPTER_ALLOW_9V_TO_12V	= 6,
+	USBIN_ADAPTER_ALLOW_5V_OR_9V_TO_12V = 7,
+	USBIN_ADAPTER_ALLOW_5V_TO_9V	= 8,
+	USBIN_ADAPTER_ALLOW_5V_TO_12V	= 12,
 };
 
 #define USBIN_OPTIONS_1_CFG_REG			(USBIN_BASE + 0x62)
@@ -326,7 +344,6 @@ enum {
 #define USBIN_AICL_OPTIONS_CFG_REG		(USBIN_BASE + 0x80)
 #define SUSPEND_ON_COLLAPSE_USBIN_BIT		BIT(7)
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* tongfeng.Huang@BSP.CHG.Basic, 2018/09/27,  Add for charger */
 #define USBIN_AICL_HDC_EN_BIT			BIT(6)
 #define USBIN_AICL_START_AT_MAX_BIT		BIT(5)
 #endif
@@ -334,13 +351,11 @@ enum {
 #define USBIN_AICL_ADC_EN_BIT			BIT(3)
 #define USBIN_AICL_EN_BIT			BIT(2)
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* tongfeng.Huang@BSP.CHG.Basic, 2018/09/27,  Add for charger */
 #define USBIN_HV_COLLAPSE_RESPONSE_BIT		BIT(1)
 #define USBIN_LV_COLLAPSE_RESPONSE_BIT		BIT(0)
 #endif
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* tongfeng.Huang@BSP.CHG.Basic, 2018/12/12,  Add for charger */
 #define TYPE_C_CFG_REG				(USBIN_BASE + 0x58)
 #define APSD_START_ON_CC_BIT			BIT(7)
 #endif
@@ -435,7 +450,6 @@ enum {
 #define TYPEC_CCOUT_SRC_BIT			BIT(0)
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* zhangkun@BSP.CHG.Basic, 2019/01/26, add for close usb debug mode */
 #define DEBUG_ACCESS_SNK_CFG_REG               (TYPEC_BASE + 0x4a)
 #endif
 
@@ -460,6 +474,9 @@ enum {
 	TYPEC_SRC_RP_3A_DUPLICATE,
 	TYPEC_SRC_RP_MAX_ELEMENTS
 };
+
+#define TYPE_C_CC_CURRSRC_CONTROL_REG			(TYPEC_BASE + 0x5C)
+#define TYPE_C_CC_CURRSRC_CONTROL_MASK			GENMASK(3, 0)
 
 #define TYPE_C_INTERRUPT_EN_CFG_1_REG			(TYPEC_BASE + 0x5E)
 #define TYPEC_LEGACY_CABLE_INT_EN_BIT			BIT(7)
@@ -543,7 +560,6 @@ enum {
 #define RESTART_AICL_BIT			BIT(1)
 #define RERUN_AICL_BIT				BIT(0)
 #ifdef OPLUS_FEATURE_CHG_BASIC
-/* tongfeng.Huang@BSP.CHG.Basic, 2018/09/27,  Add for charger */
 #define RESTART_AICL_BIT            BIT(1)
 #endif
 
